@@ -1,6 +1,8 @@
 """FastAPI layer over the local, explainable NLP services."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from app.utils.config import settings
 from app.utils.logging_config import configure_logging
 
@@ -47,7 +49,17 @@ if FastAPI is not None:
         chunks: list[dict] = Field(min_length=1)
         top_k: int = Field(default=3, ge=1, le=10)
 
-    app = FastAPI(title=settings.app_name, version="1.0.0")
+    class LabRequest(BaseModel):
+        text: str = Field(min_length=1)
+        chunks: list[dict] = []
+        use_ner: bool = False
+
+    class ReportRequest(BaseModel):
+        filename: str = "document"
+        answers: list[dict] = Field(min_length=1)
+        chunks: list[dict] = []
+
+    app = FastAPI(title=settings.app_name, version="2.0.0")
 
     @app.get("/api/health")
     @app.get("/health")
@@ -76,7 +88,7 @@ if FastAPI is not None:
 
     @app.post("/api/questions")
     def questions(request: QuestionRequest) -> dict:
-        result = analyze_document(request.text)
+        result = {} if request.topics and request.chunks else analyze_document(request.text)
         qs = generate_questions(
             topics=request.topics or result["topics"],
             source_text=request.text,
@@ -106,6 +118,17 @@ if FastAPI is not None:
             source_passage=request.source_passage,
         ).to_dict()
 
+    @app.post("/api/lab")
+    def lab(request: LabRequest) -> dict:
+        from app.services.lab import build_lab
+        return build_lab(request.text, request.chunks, request.use_ner)
+
+    @app.post("/api/report")
+    def report(request: ReportRequest) -> dict:
+        from app.services.report import build_markdown_report, revision_plan
+        plan = revision_plan(request.answers, request.chunks)
+        return {"plan": plan, "markdown": build_markdown_report(request.filename, request.answers, plan)}
+
     @app.post("/api/search")
     def search_document(request: SearchRequest) -> dict:
         from app.nlp.retrieval import search
@@ -119,6 +142,17 @@ if FastAPI is not None:
     @app.post("/api/summarize")
     def summarize(request: TextRequest) -> dict:
         return {"summary": analyze_document(request.text, request.filename)["summary"]}
+
+    WEB_DIR = Path(__file__).resolve().parents[1] / "web"
+    if WEB_DIR.exists():
+        from fastapi.responses import FileResponse
+        from fastapi.staticfiles import StaticFiles
+
+        app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
+
+        @app.get("/", include_in_schema=False)
+        def index() -> FileResponse:
+            return FileResponse(WEB_DIR / "index.html")
 
 else:
     app = {"title": settings.app_name}

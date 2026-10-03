@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ExamLens · NLP Exam Evaluator</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M9 22V10h6.5a3.5 3.5 0 010 7H9m9 5l-3-5' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo"><svg viewBox="0 0 32 32" width="22" height="22"><circle cx="14" cy="14" r="6.5" stroke="#fff" stroke-width="2.6" fill="none"/><path d="M19 19l6 6" stroke="#fff" stroke-width="2.8" stroke-linecap="round"/></svg></div>
+      <div><div class="brand-name">ExamLens</div><div class="brand-sub">NLP exam evaluator</div></div>
+    </div>
+    <nav id="nav">
+      <button class="nav-item active" data-view="upload"><span class="step">1</span><span>Document</span></button>
+      <button class="nav-item" data-view="insights" disabled><span class="step">2</span><span>NLP Insights</span></button>
+      <button class="nav-item" data-view="ask" disabled><span class="step">3</span><span>Ask the Document</span></button>
+      <button class="nav-item" data-view="exam" disabled><span class="step">4</span><span>Exam</span></button>
+      <button class="nav-item" data-view="results" disabled><span class="step">5</span><span>Results</span></button>
+    </nav>
+    <div class="side-foot">
+      <div id="docChip" class="doc-chip hidden"></div>
+      <button id="themeBtn" class="ghost-btn" title="Toggle theme">Toggle theme</button>
+      <p class="privacy">100% local · no data leaves your machine</p>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <h1 id="viewTitle">Document</h1>
+      <p id="viewSub">Upload study material to begin.</p>
+    </header>
+
+    <!-- 1. DOCUMENT -->
+    <section class="view active" id="view-upload">
+      <div class="grid two">
+        <div class="card">
+          <div id="drop" class="drop" tabindex="0">
+            <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5M12 18v-6m-3 3l3-3 3 3"/></svg>
+            <strong>Drop a study PDF here</strong>
+            <span>or click to browse · max 25 MB</span>
+            <input id="file" type="file" accept="application/pdf" hidden>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Or paste text</h3>
+          <textarea id="pasteText" rows="6" placeholder="Paste lecture notes or an article…"></textarea>
+          <div class="row"><button id="pasteBtn" class="btn">Analyze text</button><button id="sampleBtn" class="btn ghost">Load sample</button></div>
+        </div>
+      </div>
+      <div id="docInfo" class="hidden">
+        <div class="stats" id="stats"></div>
+        <div class="grid two">
+          <div class="card"><h3>Summary</h3><p id="summary" class="prose"></p></div>
+          <div class="card"><h3>Key concepts</h3><div id="topics" class="chips"></div></div>
+        </div>
+        <div class="row end"><button class="btn" data-go="insights">Explore NLP insights →</button></div>
+      </div>
+    </section>
+
+    <!-- 2. INSIGHTS -->
+    <section class="view" id="view-insights"><div id="insightsBody"></div></section>
+
+    <!-- 3. ASK -->
+    <section class="view" id="view-ask">
+      <div class="card">
+        <p class="muted">Hybrid retrieval: <b>BM25</b> (exact terms) + <b>sentence embeddings</b> (meaning) fused with Reciprocal Rank Fusion, then a <b>cross-encoder</b> re-reads the best candidates.</p>
+        <form id="askForm" class="searchbar"><input id="askInput" placeholder="Ask anything about your document, e.g. “What does stemming do?”" autocomplete="off"><button class="btn">Search</button></form>
+      </div>
+      <div id="askResults"></div>
+    </section>
+
+    <!-- 4. EXAM -->
+    <section class="view" id="view-exam">
+      <div class="card" id="examSetup">
+        <div class="setup">
+          <label>Questions<input id="qCount" type="number" min="1" max="20" value="5"></label>
+          <label>Difficulty
+            <div class="seg" id="qDiff"><button data-v="Easy">Easy</button><button data-v="Medium" class="on">Medium</button><button data-v="Hard">Hard</button></div>
+          </label>
+          <button id="genBtn" class="btn">Generate exam</button>
+        </div>
+        <p class="muted small" id="diffHint">Easy asks you to define concepts · Medium to explain them · Hard to compare related concepts or discuss in detail.</p>
+      </div>
+      <div id="examBody"></div>
+    </section>
+
+    <!-- 5. RESULTS -->
+    <section class="view" id="view-results"><div id="resultsBody"></div></section>
+  </main>
+</div>
+<div id="loader" class="loader hidden"><div class="spinner"></div><span id="loaderText">Working…</span></div>
+<div id="toasts"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

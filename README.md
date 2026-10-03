@@ -1,4 +1,4 @@
-# AI PDF-Based Subjective Exam Evaluator
+# ExamLens: AI PDF-Based Subjective Exam Evaluator
 
 An academic NLP project that turns a study PDF into an interactive subjective exam workflow.
 
@@ -11,7 +11,7 @@ This first version is being built with a modular architecture so the core NLP pi
 - answer evaluation
 - summarization
 - FastAPI backend
-- Streamlit frontend
+- Web UI (vanilla HTML/CSS/JS served by FastAPI, no build step)
 
 ## Project Goal
 
@@ -37,7 +37,7 @@ Transformer-based models are planned only for supportive tasks such as question 
 ```text
 app/
   api/                FastAPI application and request/response models
-  frontend/           Streamlit pages and UI flow
+  web/                Single-page web UI (index.html + static/app.css, app.js)
   services/           Orchestration between NLP, PDF, and evaluation layers
   nlp/                Preprocessing, representation, analysis, embeddings
   pdf/                PDF extraction and validation
@@ -119,10 +119,10 @@ Each component is normalized to 0–100. Semantic similarity uses a local senten
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-./run_api.sh
+./run.sh
 ```
 
-In another terminal, activate the environment and run `./run_ui.sh`. The API documentation is available at `http://127.0.0.1:8000/docs`. The root-level `streamlit_app.py` launcher avoids a Python package-name collision with the `app` package.
+Open http://127.0.0.1:8000 for the web app (`./run.sh` also works). The REST API documentation is at `http://127.0.0.1:8000/docs`.
 
 The application also supports direct text analysis through `/api/analyze`, which is useful for testing without a PDF. Uploaded PDFs are validated for type, size, emptiness, and extractable text. Scanned PDFs currently receive a clear OCR-not-enabled error.
 
@@ -142,7 +142,9 @@ The application also supports direct text analysis through `/api/analyze`, which
 ```text
 app/
   api/main.py                 FastAPI routes and Pydantic request models
-  frontend/app.py             Streamlit dashboard and exam flow
+  web/                        Web UI: document, NLP insights, search, exam, results
+  services/lab.py             data for the NLP Insights view (graph, TextRank, POS...)
+  question_generation/concept_generator.py   mines defined concepts, asks Easy/Medium/Hard questions
   pdf/extraction.py           PDF validation and PyMuPDF extraction
   nlp/preprocessing.py        tokens, lemmas, BoW, TF-IDF, n-grams, POS/NER baseline
   nlp/embeddings.py           optional local sentence embeddings

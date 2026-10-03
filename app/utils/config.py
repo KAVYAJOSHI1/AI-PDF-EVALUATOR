@@ -12,7 +12,6 @@ class Settings:
     app_name: str = os.getenv("APP_NAME", "AI PDF-Based Subjective Exam Evaluator")
     api_host: str = os.getenv("API_HOST", "127.0.0.1")
     api_port: int = int(os.getenv("API_PORT", "8000"))
-    streamlit_port: int = int(os.getenv("STREAMLIT_PORT", "8501"))
     max_upload_mb: int = int(os.getenv("MAX_UPLOAD_MB", "25"))
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     project_root: Path = Path(__file__).resolve().parents[2]

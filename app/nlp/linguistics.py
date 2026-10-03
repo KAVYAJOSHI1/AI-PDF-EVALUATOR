@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
-from app.nlp.preprocessing import simple_lemma
+from app.nlp.preprocessing import STOP_WORDS, simple_lemma
 
 _WORDNET_POS = {"N": "n", "V": "v", "J": "a", "R": "r"}
 NER_MODEL = "dslim/bert-base-NER"
@@ -49,8 +49,23 @@ def coarse_pos(tag: str) -> str:
 
 
 def heuristic_entities(text: str) -> list[dict]:
-    phrases = re.findall(r"\b(?:[A-Z][a-z]+\s+){0,2}[A-Z][a-z]+\b", text)
-    return [{"text": p, "label": "PROPER_NOUN"} for p in dict.fromkeys(phrases)][:20]
+    """Capitalised phrases. A lone capitalised word only counts if it never appears in lowercase
+    (so sentence-initial 'How' or 'Because' are not mistaken for names)."""
+    lower_words = set(re.findall(r"\b[a-z][a-z'-]*\b", text))
+    found = []
+    for phrase in dict.fromkeys(re.findall(r"\b(?:[A-Z][a-z]+\s+){0,2}[A-Z][a-z]+\b", text)):
+        words = phrase.split()
+        if len(words) == 1 and (phrase.lower() in lower_words or phrase.lower() in STOP_WORDS):
+            continue
+        if words[0].lower() in STOP_WORDS | {"how", "what", "why", "which", "because", "examples", "example", "module"}:
+            words = words[1:]
+            if not words:
+                continue
+            phrase = " ".join(words)
+            if len(words) == 1 and phrase.lower() in lower_words:
+                continue
+        found.append({"text": phrase, "label": "PROPER_NOUN"})
+    return found[:20]
 
 
 @lru_cache(maxsize=1)
@@ -71,6 +86,8 @@ def named_entities(text: str, use_model: bool = False) -> list[dict]:
     for start in range(0, len(text), 1500):  # stay inside the 512-token window
         for ent in ner(text[start:start + 1500]):
             name = ent["word"].strip()
-            if len(name) > 2 and name not in found:
+            if len(name) > 2 and "##" not in name and ent["score"] >= 0.6 and name not in found:
                 found[name] = {"text": name, "label": ENTITY_LABELS.get(ent["entity_group"], ent["entity_group"]), "confidence": round(float(ent["score"]), 3)}
-    return list(found.values())[:30]
+    names = list(found)
+    # drop word-piece fragments such as 'Art' (from 'Artificial') that are prefixes of a longer entity
+    return [v for k, v in found.items() if not any(o != k and o.startswith(k) and not o.startswith(k + " ") for o in names)][:30]

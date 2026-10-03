@@ -294,7 +294,8 @@ def _make(qid: int, concepts: list[Concept], prompt: str, reference: str, diffic
     for c in concepts:
         acr = re.search(r"\(([A-Za-z0-9\- ]{2,12})\)", c.term)
         expected.append(" / ".join([c.short] + ([acr.group(1)] if acr else [])))
-        expected += _key_words(_answer(c, 1), c.short, 1, nouns_only=True)
+        if len(concepts) == 1 and len(c.definition.split()) >= 12:  # rich single definition: one distinctive noun
+            expected += _key_words(c.definition, c.short, 1, nouns_only=True)
     return {
         "id": qid,
         "topic": " vs ".join(c.short for c in concepts),
