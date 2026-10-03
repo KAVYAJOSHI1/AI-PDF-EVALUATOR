@@ -33,7 +33,7 @@ def test_difficulty_changes_question_type():
 
 
 def test_questions_are_grounded_and_unique():
-    qs = generate_questions([], "", count=5, difficulty="Medium", chunks=_chunks())
+    qs = generate_questions([], "", count=5, difficulty="Easy", chunks=_chunks())
     assert len({q["topic"] for q in qs}) == len(qs) >= 3
     for q in qs:
         assert q["reference_answer"] and q["source_page"] in (1, 2, 3)
@@ -50,7 +50,7 @@ def test_medium_prompt_matches_concept_kind():
     from app.question_generation.concept_generator import medium_prompt
     by_term = {c.short: medium_prompt(c) for c in mine_concepts(_chunks())}
     assert "measures" in by_term["Cross Entropy"]
-    assert "does to text" in by_term["Stemming"]
+    assert "does and why" in by_term["Stemming"]
 
 
 def test_slide_summary_uses_definitions():
@@ -58,3 +58,18 @@ def test_slide_summary_uses_definitions():
     chunks = _chunks()
     summary = analyze_document(" ".join(c["text"] for c in chunks), chunks=chunks)["summary"]
     assert "Stemming removes prefixes" in summary and "print(" not in summary
+
+
+def test_deeper_questions_need_enough_source_material():
+    """A one-line definition cannot support a Medium/Hard question, so it is not asked."""
+    chunks = _chunks()
+    medium = generate_concept_questions(chunks, 10, "Medium")
+    assert all(len(q["reference_answer"].split()) >= 14 for q in medium)
+    assert not any("Stop words" in q["topic"] for q in medium)
+
+
+def test_head_noun_duplicates_are_merged():
+    from app.pdf.extraction import chunk_document_pages
+    pages = [{"page_number": 1, "text": "A pipeline is a sequence of steps performed to convert raw text into a form.\nAn NLP pipeline is a series of preprocessing steps that transform raw text into data.\nStemming removes suffixes to obtain the root form of a word.\nStop words are common words that carry little meaning."}]
+    terms = [c.short for c in mine_concepts(chunk_document_pages(pages))]
+    assert sum("pipeline" in t.lower() for t in terms) == 1

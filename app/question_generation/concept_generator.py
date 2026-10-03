@@ -134,7 +134,7 @@ def _heading_pairs(lines: list[str]) -> list[tuple[str, str]]:
         if len(words) > 4 or title.lower() in SECTION_HEADS | BAD_TITLES or words[0].lower() in BAD_SUBJECT_STARTS:
             continue
         if first in VERBS and len(next_line.split()) >= 5 and next_line[0].isupper() and not next_line.endswith("?"):
-            out.append((title, f"{title} {next_line[0].lower() + next_line[1:]}"))
+            out.append((title, f"{title} {next_line[0].lower() + next_line[1:]}".rstrip(".") + "."))
     return out
 
 
@@ -164,6 +164,20 @@ def _merge_acronyms(concepts: dict[str, Concept]) -> None:
                 other.details = [c.definition] + c.details + other.details
                 if "(" not in other.term:
                     other.term = f"{other.short} ({c.short})"
+                del concepts[key]
+                break
+
+
+def _merge_head_duplicates(concepts: dict[str, Concept]) -> None:
+    """'Pipeline' + 'NLP pipeline' are one concept; keep the more specific name."""
+    for key in sorted(concepts, key=len):
+        c = concepts.get(key)
+        if c is None or " " in key:
+            continue
+        for other_key, other in list(concepts.items()):
+            if other is not c and " " in other_key and other_key.endswith(" " + key) and len(other_key.split()) == 2 and abs(c.page - other.page) <= 1:
+                other.aliases |= c.aliases
+                other.details = other.details + [c.definition] + c.details
                 del concepts[key]
                 break
 
@@ -203,6 +217,7 @@ def mine_concepts(chunks: list[dict], full_text: str = "") -> list[Concept]:
                 c.aliases.add(acronym.group(1).lower())
             concepts[key] = c
     _merge_acronyms(concepts)
+    _merge_head_duplicates(concepts)
     for c in concepts.values():
         c.details = _dedupe_details(c)
         mentions = sum(full_lower.count(a) for a in c.aliases)
@@ -240,7 +255,7 @@ def _related_pairs(concepts: list[Concept]) -> list[tuple[Concept, Concept]]:
             head_in_other = any(len(x.short.split()[-1]) > 4 and x.short.split()[-1].lower() in y.definition.lower() for x, y in ((a, b), (b, a)))
             near = abs(a.page - b.page) <= 1  # sibling concepts sit on the same/adjacent slides
             score = sim + (0.25 if near else 0.0)
-            if sim >= 0.3 and 0.55 <= score and sim <= 0.92 and not mentions_other and not head_in_other:
+            if min(len(a.definition.split()), len(b.definition.split())) >= 8 and sim >= (0.4 if near else 0.55) and sim <= 0.92 and not mentions_other and not head_in_other:
                 pairs.append((score, a, b))
     pairs.sort(key=lambda p: p[0] + 0.1 * (p[1].importance + p[2].importance), reverse=True)
     return [(a, b) for _, a, b in pairs]
@@ -249,10 +264,11 @@ def _related_pairs(concepts: list[Concept]) -> list[tuple[Concept, Concept]]:
 EASY_PROMPTS = ["Define {t}.", "What is meant by {t}?", "In your own words, what is {t}?"]
 MEDIUM_BY_KIND = {
     "measure": "Explain what {t} measures and why that is useful.",
-    "action": "Explain what {t} does to text and why this step matters in an NLP pipeline.",
+    "action": "Explain what {t} does and why this step is useful.",
     "meaning": "Explain the meaning of {t} and why it is significant.",
-    "technique": "Explain {t}: what is it, how does it work, and where is it applied?",
+    "technique": "Explain {t} in your own words: what it is and how it works.",
 }
+MIN_WORDS = {"Medium": 14, "Hard": 22}  # reference answers shorter than this cannot support a deeper question
 ACTION_VERBS = {"removes", "converts", "transforms", "splits", "maps", "assigns", "counts", "combines", "divides", "reduces", "produces", "identifies", "finds", "captures"}
 
 
@@ -318,7 +334,11 @@ def generate_concept_questions(chunks: list[dict], count: int = 5, difficulty: s
                 continue
             used |= {a.short.lower(), b.short.lower()}
             out.append(_make(len(out) + 1, [a, b], f"Compare and contrast {a.short} and {b.short}. How do they differ in purpose and behaviour?", f"{_answer(a, 1)} {_answer(b, 1)}", "Hard", "comparison"))
-    ordered = sorted(concepts, key=lambda c: -min(len(c.details), 1)) if difficulty in ("Medium", "Hard") else concepts
+    def deep_enough(c: Concept, level: str) -> bool:
+        return len(_answer(c, 3 if level == "Hard" else 2).split()) >= MIN_WORDS[level]
+
+    pool = [c for c in concepts if difficulty == "Easy" or deep_enough(c, difficulty)]
+    ordered = sorted(pool, key=lambda c: -min(len(c.details), 1)) if difficulty in ("Medium", "Hard") else pool
     for c in ordered:
         if len(out) >= count:
             break
@@ -329,7 +349,7 @@ def generate_concept_questions(chunks: list[dict], count: int = 5, difficulty: s
         if difficulty == "Easy":
             out.append(_make(i + 1, [c], EASY_PROMPTS[i % 3].format(t=c.short), c.definition, "Easy", "definition"))
         elif difficulty == "Hard":
-            out.append(_make(i + 1, [c], f"Discuss {c.short} in depth: define it, explain how it works, and describe where it is applied.", _answer(c, 3), "Hard", "deep-dive"))
+            out.append(_make(i + 1, [c], f"Discuss {c.short} in detail: define it and explain how it works, using the points covered in the study material.", _answer(c, 3), "Hard", "deep-dive"))
         else:
             out.append(_make(i + 1, [c], medium_prompt(c), _answer(c, 2), "Medium", "explanation"))
     return out
