@@ -23,3 +23,9 @@ def test_extract_pdf_rejects_bad_input():
         extract_pdf(b"junk", "a.txt")
     with pytest.raises(PDFExtractionError):
         extract_pdf(b"junk", "a.pdf")
+
+
+def test_blank_answer_scores_without_crashing():
+    from app.evaluation.scoring import evaluate_answer
+    result = evaluate_answer("", "Stemming removes suffixes to get the root form of a word.", ["Stemming"])
+    assert result.overall_score == 0 and result.missing_concepts == ["Stemming"]

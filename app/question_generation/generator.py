@@ -196,6 +196,14 @@ def generate_questions(
     existing_prompts: list[str] = []
     seen_topics: set[str] = set()
 
+    # Lecture notes/slides that define several concepts: ask about those definitions
+    # (the generic topic engine below is built for flowing prose and asks junk on slides).
+    from app.question_generation.concept_generator import generate_concept_questions
+    concept_questions = generate_concept_questions(chunks, count, difficulty, source_text)
+    if concept_questions:
+        logger.info("Concept-mined generator produced %d questions", len(concept_questions))
+        return concept_questions
+
     for item in topics:
         if len(questions) >= count:
             break

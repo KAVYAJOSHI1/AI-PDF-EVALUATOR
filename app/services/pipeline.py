@@ -121,12 +121,30 @@ def summarize_text(text: str, max_sentences: int = 5) -> str:
     return " ".join(ranked[:max_sentences])
 
 
+def _prefer_defined_concepts(topics: list[dict], chunks: list[dict], text: str, limit: int = 10) -> list[dict]:
+    """Lead with concepts the document explicitly defines; clean whitespace in the rest."""
+    from app.question_generation.concept_generator import mine_concepts
+    defined = [{
+        "topic": c.short, "importance_score": round(min(1.0, c.importance / 6), 4), "evidence": "Defined in the document",
+        "source_page": c.page, "source_section": c.chunk.get("section", "General"), "source_chunk_id": c.chunk.get("chunk_id", 1),
+        "source_passage": c.chunk["text"], "source_id": c.chunk.get("source_id", ""),
+    } for c in mine_concepts(chunks, text)[:limit]]
+    seen = {d["topic"].lower() for d in defined}
+    rest = []
+    for t in topics:
+        t["topic"] = re.sub(r"\s+", " ", t["topic"]).strip()
+        if "\n" not in t["topic"] and t["topic"].lower() not in seen and len(defined) + len(rest) < limit:
+            rest.append(t)
+    return (defined + rest)[:limit]
+
+
 def analyze_document(text: str, filename: str = "document.pdf", pages: list[dict] | None = None, chunks: list[dict] | None = None) -> dict:
     from app.pdf.extraction import chunk_document_pages
     pages = pages or [{"page_number": 1, "text": text}]
     chunks = chunks or chunk_document_pages(pages)
     analysis = analyze_text(text)
     topics = extract_topics(analysis, text, limit=10, chunks=chunks)
+    topics = _prefer_defined_concepts(topics, chunks, text)
     return {
         "filename": filename,
         "word_count": len(text.split()),

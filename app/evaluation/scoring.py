@@ -37,6 +37,14 @@ def _lexical_similarity(a: str, b: str) -> float:
     return len(a_tokens & b_tokens) / len(a_tokens | b_tokens)
 
 
+def _mentions(concept: str, answer_lower: str, answer_terms: set[str]) -> bool:
+    """Phrase match, or every content term of the concept appears (lemmatised) in the answer."""
+    if concept.lower() in answer_lower:
+        return True
+    terms = [simple_lemma(t) for t in tokenize(concept) if t not in STOP_WORDS]
+    return bool(terms) and all(term in answer_terms for term in terms)
+
+
 def align_ideas(answer: str, reference: str, threshold: float = 0.55) -> list[dict]:
     """Match each reference sentence ("idea") to the answer sentence that best expresses it.
 
@@ -46,7 +54,7 @@ def align_ideas(answer: str, reference: str, threshold: float = 0.55) -> list[di
     ref_sents = split_sentences(reference) or [reference]
     ans_sents = split_sentences(answer) or ([answer] if answer.strip() else [])
     if not ans_sents:
-        return [{"idea": r, "matched_sentence": None, "similarity": 0.0, "addressed": False} for r in ref_sents]
+        return [{"idea": r, "matched_sentence": None, "similarity": 0.0, "addressed": False, "contradiction": 0.0} for r in ref_sents]
     vectors = embed(ref_sents + ans_sents)
     out = []
     for i, ref in enumerate(ref_sents):
@@ -79,6 +87,8 @@ def evaluate_answer(
     source_passage: str | None = None,
 ) -> EvaluationResult:
     concepts = concepts or []
+    if not answer.strip():
+        return EvaluationResult(0.0, 0.0, 0.0, 0.0, [], list(concepts), list(keywords or []), "No answer was written.", 0.0, align_ideas("", reference_answer))
     keywords = keywords or [t for t in tokenize(reference_answer) if t.lower() not in STOP_WORDS and len(t) > 3]
 
     answer_lower = answer.lower()
@@ -87,31 +97,11 @@ def evaluate_answer(
     covered = []
     missing = []
     for concept in concepts:
-        concept_lower = concept.lower()
-        concept_terms = [simple_lemma(t) for t in tokenize(concept) if t.lower() not in STOP_WORDS]
-
-        if not concept_terms:
-            if concept_lower in answer_lower:
-                covered.append(concept)
-            else:
-                missing.append(concept)
-            continue
-
-        # Exact phrase match or matching all key concept terms
-        if concept_lower in answer_lower:
+        # "Natural Language Processing / NLP": any listed name counts.
+        if any(_mentions(alt.strip(), answer_lower, answer_terms) for alt in concept.split(" / ")):
             covered.append(concept)
-        elif len(concept_terms) == 1:
-            if concept_terms[0] in answer_terms:
-                covered.append(concept)
-            else:
-                missing.append(concept)
         else:
-            matched_count = sum(1 for term in concept_terms if term in answer_terms)
-            if matched_count == len(concept_terms):
-                covered.append(concept)
-            else:
-                missing.append(concept)
-
+            missing.append(concept)
 
     covered_keywords = [word for word in keywords if simple_lemma(word.lower()) in answer_terms or word.lower() in answer_lower]
     concept_score = len(covered) / len(concepts) if concepts else _lexical_similarity(answer, reference_answer)
@@ -125,7 +115,7 @@ def evaluate_answer(
     )
 
     alignment = align_ideas(answer, reference_answer)
-    contradictions = [a for a in alignment if a["contradiction"] > 0.6]
+    contradictions = [a for a in alignment if a.get("contradiction", 0.0) > 0.6]
     penalty = 0.6 * len(contradictions) / len(alignment) if alignment else 0.0
     overall *= 1 - penalty
 
