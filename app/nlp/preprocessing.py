@@ -60,13 +60,16 @@ def _tfidf_terms(text: str) -> list[dict[str, float]]:
 def analyze_text(text: str) -> NLPAnalysis:
     tokens = tokenize(text)
     cleaned_tokens = [token for token in tokens if token not in STOP_WORDS]
-    lemmas = [simple_lemma(token) for token in cleaned_tokens]
+    from app.nlp.linguistics import coarse_pos, lemmatize_tagged, named_entities, pos_tag
+    tagged_all = pos_tag(tokens[:5000])
+    tagged_clean = pos_tag(cleaned_tokens)
+    lemmas = lemmatize_tagged(tagged_clean)
     cleaned_text = " ".join(lemmas)
     tfidf_sentences = [
         " ".join(token for token in tokenize(sentence) if token not in STOP_WORDS)
         for sentence in re.split(r"(?<=[.!?])\s+", text)
     ]
     tfidf_text = ". ".join(sentence for sentence in tfidf_sentences if sentence)
-    named_entities = [{"text": phrase, "label": "PROPER_NOUN"} for phrase in re.findall(r"\b(?:[A-Z][a-z]+\s+){0,2}[A-Z][a-z]+\b", text)[:20]]
-    pos_tags = [(token, "NOUN" if token in lemmas else "OTHER") for token in tokens[:100]]
-    return NLPAnalysis(tokens, cleaned_tokens, lemmas, dict(Counter(lemmas)), _tfidf_terms(tfidf_text), {f"{n}-grams": make_ngrams(lemmas, n) for n in (1, 2, 3)}, pos_tags, named_entities, cleaned_text)
+    entities = named_entities(text)
+    pos_tags = [(token, coarse_pos(tag)) for token, tag in tagged_all[:100]]
+    return NLPAnalysis(tokens, cleaned_tokens, lemmas, dict(Counter(lemmas)), _tfidf_terms(tfidf_text), {f"{n}-grams": make_ngrams(lemmas, n) for n in (1, 2, 3)}, pos_tags, entities, cleaned_text)

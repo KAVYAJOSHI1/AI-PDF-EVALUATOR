@@ -1,8 +1,9 @@
 """Explainable, local answer scoring; no external LLM is used here."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from app.nlp.embeddings import semantic_similarity
+from dataclasses import asdict, dataclass, field
+from app.nlp.embeddings import embed, lexical_similarity, semantic_similarity
+from app.nlp.textrank import split_sentences
 from app.nlp.preprocessing import STOP_WORDS, simple_lemma, tokenize
 
 WEIGHTS = {"semantic_similarity": 0.50, "concept_coverage": 0.30, "keyword_coverage": 0.20}
@@ -19,6 +20,7 @@ class EvaluationResult:
     missing_keywords: list[str]
     feedback: str
     baseline_tfidf_similarity: float
+    alignment: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -30,6 +32,30 @@ def _lexical_similarity(a: str, b: str) -> float:
     if not a_tokens or not b_tokens:
         return 0.0
     return len(a_tokens & b_tokens) / len(a_tokens | b_tokens)
+
+
+def align_ideas(answer: str, reference: str, threshold: float = 0.55) -> list[dict]:
+    """Match each reference sentence ("idea") to the answer sentence that best expresses it.
+
+    This makes the semantic score inspectable: the student sees which ideas were
+    expressed (and by which of their sentences) and which were never addressed.
+    """
+    ref_sents = split_sentences(reference) or [reference]
+    ans_sents = split_sentences(answer) or ([answer] if answer.strip() else [])
+    if not ans_sents:
+        return [{"idea": r, "matched_sentence": None, "similarity": 0.0, "addressed": False} for r in ref_sents]
+    vectors = embed(ref_sents + ans_sents)
+    out = []
+    for i, ref in enumerate(ref_sents):
+        if vectors is not None:
+            sims = vectors[len(ref_sents):] @ vectors[i]
+            thr = threshold
+        else:
+            sims = [lexical_similarity(ref, a) for a in ans_sents]
+            thr = 0.25
+        j = int(max(range(len(ans_sents)), key=lambda k: sims[k]))
+        out.append({"idea": ref, "matched_sentence": ans_sents[j], "similarity": round(max(0.0, float(sims[j])), 3), "addressed": bool(sims[j] >= thr)})
+    return out
 
 
 def evaluate_answer(
@@ -109,5 +135,6 @@ def evaluate_answer(
         missing_keywords,
         feedback,
         round(semantic_score * 100, 2),
+        align_ideas(answer, reference_answer),
     )
 

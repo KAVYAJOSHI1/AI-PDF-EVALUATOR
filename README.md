@@ -76,12 +76,24 @@ models/               Local model cache or lightweight artifacts
 | BoW | Lemma frequency dictionary |
 | TF-IDF | scikit-learn `TfidfVectorizer`, with a fallback |
 | Unigrams, bigrams, trigrams | Frequency-ranked n-gram extraction |
-| POS and NER | Lightweight visible baseline signals; spaCy can replace them later |
+| POS tagging | NLTK averaged perceptron (`app/nlp/linguistics.py`), colour-coded in the UI |
+| Lemmatization | POS-aware WordNet lemmatizer (suffix baseline as fallback) |
+| NER | Heuristic by default; opt-in local BERT NER (`dslim/bert-base-NER`) |
+| TextRank | From-scratch PageRank for summarization and keyphrases (`app/nlp/textrank.py`) |
+| Retrieval / QA | BM25 (from scratch) + dense embeddings fused by Reciprocal Rank Fusion (`app/nlp/retrieval.py`) |
+| Explainable scoring | Reference ideas aligned to the student's sentences (`align_ideas`) |
 | Embeddings | Optional local `all-MiniLM-L6-v2`; lexical fallback when unavailable |
 | Semantic similarity | Embedding cosine similarity or token-set baseline |
 | Text generation | Deterministic topic-to-question templates |
-| Summarization | Extractive TF-IDF-ranked sentence summary |
+| Summarization | Extractive TextRank summary |
 | REST API | FastAPI endpoints under `/api` |
+
+## What's New
+
+- **Ask the Document** tab: natural-language search with the answer sentence highlighted and a BM25/semantic score breakdown.
+- **NLP Analysis** tab is now a visual lab: coloured POS tags, tokens to lemmas, TF-IDF vs TextRank side by side, a concept map graph, sentence-importance ranking and optional BERT NER.
+- **Exam feedback** shows an idea-by-idea check: which reference ideas your answer expressed, and which sentence expressed them.
+- The embedding model is loaded once and cached instead of on every call.
 
 ## Scoring Methodology
 
@@ -116,6 +128,8 @@ The application also supports direct text analysis through `/api/analyze`, which
 - `POST /api/questions` with text, topics, count, and difficulty
 - `POST /api/evaluate` with answer, reference answer, concepts, and keywords
 - `POST /api/summarize` with text
+- `POST /api/search` with a query and chunks (hybrid BM25 + semantic)
+- `POST /api/keyphrases` with text (TextRank)
 
 ## Project Structure
 

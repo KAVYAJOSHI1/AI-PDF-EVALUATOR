@@ -11,6 +11,66 @@ from app.services.pipeline import analyze_document, serializable_analysis
 from app.utils.config import settings
 
 
+POS_COLORS = {"NOUN": "#2563eb", "VERB": "#16a34a", "ADJ": "#d97706", "ADV": "#9333ea", "OTHER": "#6b7280"}
+
+
+def render_nlp_lab(doc: dict, analysis: dict) -> None:
+    """Visual tour of each NLP stage, computed on the uploaded document."""
+    from app.nlp.linguistics import named_entities
+    from app.nlp.textrank import rank_sentences, textrank_keyphrases
+
+    st.subheader("1. POS tagging")
+    st.markdown(" ".join(f"<span style='color:{POS_COLORS.get(tag, '#6b7280')};font-weight:600' title='{tag}'>{tok}</span>" for tok, tag in analysis["pos_tags"][:80]), unsafe_allow_html=True)
+    st.caption(" · ".join(f"<span style='color:{c}'>■</span> {t}" for t, c in POS_COLORS.items()), unsafe_allow_html=True)
+
+    st.subheader("2. Tokens → lemmas (WordNet, POS-aware)")
+    st.dataframe({"cleaned token": analysis["cleaned_tokens"][:40], "lemma": analysis["lemmas"][:40]}, use_container_width=True, height=200)
+
+    st.subheader("3. TF-IDF vs. TextRank keyphrases")
+    left, right = st.columns(2)
+    left.caption("TF-IDF (statistical: frequent here, rare elsewhere)")
+    left.dataframe(analysis["tfidf_terms"][:10], use_container_width=True)
+    right.caption("TextRank (graph: central in the word co-occurrence network)")
+    right.dataframe(textrank_keyphrases(doc["text"], 10), use_container_width=True)
+
+    st.subheader("4. Concept map")
+    phrases = [p["phrase"] for p in textrank_keyphrases(doc["text"], 12)]
+    sentences = [x.lower() for x in doc["text"].replace("\n", " ").split(".")]
+    edges = {(a, b): sum(a in x and b in x for x in sentences) for i, a in enumerate(phrases) for b in phrases[i + 1:]}
+    dot = "graph G {layout=neato; overlap=false; node [shape=ellipse, style=filled, fillcolor=\"#dbeafe\", fontsize=11];" + "".join(f'"{a}" -- "{b}" [penwidth={min(5, w)}];' for (a, b), w in edges.items() if w) + "}"
+    st.graphviz_chart(dot, use_container_width=True)
+    st.caption("Concepts are linked when they co-occur in the same sentence; thicker edges mean more shared sentences.")
+
+    st.subheader("5. Sentence importance (TextRank summary)")
+    ranked = rank_sentences(doc["text"])
+    top = {r["sentence"] for r in sorted(ranked, key=lambda r: r["score"], reverse=True)[:5]}
+    for r in ranked[:12]:
+        st.markdown(("🟡 **" + r["sentence"] + "**" if r["sentence"] in top else "· " + r["sentence"]) + f"  `{r['score']:.3f}`")
+
+    st.subheader("6. Named entities")
+    use_model = st.toggle("Use local BERT NER model (slower, accurate)", value=False)
+    st.dataframe(named_entities(doc["text"][:6000], use_model=use_model) if use_model else analysis["named_entities"], use_container_width=True)
+    st.json({"bigrams": analysis["ngrams"]["2-grams"][:10], "trigrams": analysis["ngrams"]["3-grams"][:10]}, expanded=False)
+
+
+def render_search(doc: dict | None) -> None:
+    """Question answering over the document: hybrid BM25 + dense retrieval."""
+    from app.nlp.retrieval import highlight, search
+
+    if not doc:
+        st.warning("Analyze a PDF first.")
+        return
+    st.write("Ask anything about your document. Results blend **BM25** (exact terms) with **sentence embeddings** (meaning) via Reciprocal Rank Fusion.")
+    query = st.text_input("Your question", placeholder="e.g. How do computers represent the meaning of words?")
+    if query:
+        for rank, hit in enumerate(search(query, doc.get("chunks", []), top_k=3), 1):
+            st.markdown(f"#### {rank}. Page {hit['page']} · {hit['section']}")
+            st.success(highlight(hit["answer_sentence"], hit["matched_terms"]))
+            st.caption(f"Fused score {hit['score']:.2f} · BM25 {hit['bm25']:.2f} · semantic {hit['semantic']:.2f} · matched terms: {', '.join(hit['matched_terms']) or 'none (pure semantic match)'}")
+            with st.expander("Full passage"):
+                st.write(hit["passage"])
+
+
 def main() -> None:
     st.set_page_config(page_title=settings.app_name, layout="wide")
     st.title("AI PDF-Based Subjective Exam Evaluator")
@@ -47,7 +107,7 @@ def main() -> None:
     if "answers" not in st.session_state:
         st.session_state.answers = []
 
-    tabs = st.tabs(["Home", "Upload & Analyze", "NLP Analysis", "Questions", "Exam", "Results"])
+    tabs = st.tabs(["Home", "Upload & Analyze", "NLP Analysis", "Ask the Document", "Questions", "Exam", "Results"])
     with tabs[0]:
         st.info("The Evaluation Score estimates alignment with the extracted reference concepts; it is not absolute truth.")
         st.write("Local scoring uses TF-IDF-style lexical similarity, concept coverage, and keyword coverage. Optional transformer models are not required.")
@@ -88,11 +148,10 @@ def main() -> None:
             st.warning("Analyze a PDF first.")
         else:
             analysis = doc["analysis"]
-            st.write("Tokens", analysis["tokens"][:100])
-            st.write("Lemmas", analysis["lemmas"][:100])
-            st.dataframe(analysis["tfidf_terms"], use_container_width=True)
-            st.json({"bigrams": analysis["ngrams"]["2-grams"][:10], "trigrams": analysis["ngrams"]["3-grams"][:10], "named_entities": analysis["named_entities"]})
+            render_nlp_lab(doc, analysis)
     with tabs[3]:
+        render_search(st.session_state.document)
+    with tabs[4]:
         doc = st.session_state.document
         if doc:
             q_cols = st.columns(3)
@@ -150,7 +209,7 @@ def main() -> None:
         elif not doc:
             st.warning("Analyze a PDF first.")
 
-    with tabs[4]:
+    with tabs[5]:
         questions = st.session_state.questions
         if not questions:
             st.warning("Generate questions first.")
@@ -187,7 +246,12 @@ def main() -> None:
                     st.markdown("**Missing Concepts:** " + " ".join(f"✗ `{c}`" for c in result.missing_concepts))
 
                 st.info(result.feedback)
-    with tabs[5]:
+                if result.alignment:
+                    st.markdown("**Idea-by-idea check** (each reference idea matched to your closest sentence)")
+                    for item in result.alignment:
+                        icon = "✅" if item["addressed"] else "❌"
+                        st.markdown(f"{icon} *{item['idea']}*  \n&nbsp;&nbsp;&nbsp;↳ {item['matched_sentence'] or 'nothing written'} `{item['similarity']:.2f}`")
+    with tabs[6]:
         answers = [item for item in st.session_state.answers if item]
         if answers:
             scores = [item["overall_score"] for item in answers]

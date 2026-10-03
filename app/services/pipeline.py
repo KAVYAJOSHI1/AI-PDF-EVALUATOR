@@ -104,6 +104,14 @@ def extract_topics(analysis: NLPAnalysis, source_text: str = "", limit: int = 10
 
 
 def summarize_text(text: str, max_sentences: int = 5) -> str:
+    """TextRank extractive summary (graph-based); falls back to term-frequency ranking."""
+    try:
+        from app.nlp.textrank import textrank_summary
+        summary = textrank_summary(text, max_sentences)
+        if summary:
+            return summary
+    except Exception:
+        pass
     sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if len(s.split()) > 5]
     if len(sentences) <= max_sentences:
         return " ".join(sentences)

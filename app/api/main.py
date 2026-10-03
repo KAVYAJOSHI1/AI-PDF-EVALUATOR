@@ -42,6 +42,11 @@ if FastAPI is not None:
         source_page: int | None = None
         source_passage: str | None = None
 
+    class SearchRequest(BaseModel):
+        query: str = Field(min_length=1)
+        chunks: list[dict] = Field(min_length=1)
+        top_k: int = Field(default=3, ge=1, le=10)
+
     app = FastAPI(title=settings.app_name, version="1.0.0")
 
     @app.get("/api/health")
@@ -100,6 +105,16 @@ if FastAPI is not None:
             source_page=request.source_page,
             source_passage=request.source_passage,
         ).to_dict()
+
+    @app.post("/api/search")
+    def search_document(request: SearchRequest) -> dict:
+        from app.nlp.retrieval import search
+        return {"hits": search(request.query, request.chunks, request.top_k)}
+
+    @app.post("/api/keyphrases")
+    def keyphrases(request: TextRequest) -> dict:
+        from app.nlp.textrank import textrank_keyphrases
+        return {"keyphrases": textrank_keyphrases(request.text)}
 
     @app.post("/api/summarize")
     def summarize(request: TextRequest) -> dict:
