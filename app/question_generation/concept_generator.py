@@ -53,6 +53,12 @@ class Concept:
     importance: float = 0.0
 
     @property
+    def verb(self) -> str:
+        """The defining verb ('measures', 'converts', 'is'...), found in the definition sentence."""
+        m = re.search(rf"\b({_VERB_RE})\b", self.definition.replace(self.term, "", 1))
+        return m.group(1) if m else "is"
+
+    @property
     def short(self) -> str:
         return re.sub(r"\s*\(.*?\)", "", self.term).strip() or self.term
 
@@ -241,7 +247,24 @@ def _related_pairs(concepts: list[Concept]) -> list[tuple[Concept, Concept]]:
 
 
 EASY_PROMPTS = ["Define {t}.", "What is meant by {t}?", "In your own words, what is {t}?"]
-MEDIUM_PROMPTS = ["Explain {t}. What does it do, and why is it useful in NLP?", "Describe how {t} works and what problem it addresses.", "Explain the idea behind {t} and where it is used."]
+MEDIUM_BY_KIND = {
+    "measure": "Explain what {t} measures and why that is useful.",
+    "action": "Explain what {t} does to text and why this step matters in an NLP pipeline.",
+    "meaning": "Explain the meaning of {t} and why it is significant.",
+    "technique": "Explain {t}: what is it, how does it work, and where is it applied?",
+}
+ACTION_VERBS = {"removes", "converts", "transforms", "splits", "maps", "assigns", "counts", "combines", "divides", "reduces", "produces", "identifies", "finds", "captures"}
+
+
+def medium_prompt(c: Concept) -> str:
+    verb = c.verb
+    if verb in {"measures", "calculates", "predicts"}:
+        return MEDIUM_BY_KIND["measure"].format(t=c.short)
+    if verb in ACTION_VERBS:
+        return MEDIUM_BY_KIND["action"].format(t=c.short)
+    if verb in {"means", "stands for", "refers to", "describes"}:
+        return MEDIUM_BY_KIND["meaning"].format(t=c.short)
+    return MEDIUM_BY_KIND["technique"].format(t=c.short)
 
 
 def _make(qid: int, concepts: list[Concept], prompt: str, reference: str, difficulty: str, kind: str) -> dict:
@@ -308,5 +331,11 @@ def generate_concept_questions(chunks: list[dict], count: int = 5, difficulty: s
         elif difficulty == "Hard":
             out.append(_make(i + 1, [c], f"Discuss {c.short} in depth: define it, explain how it works, and describe where it is applied.", _answer(c, 3), "Hard", "deep-dive"))
         else:
-            out.append(_make(i + 1, [c], MEDIUM_PROMPTS[i % 3].format(t=c.short), _answer(c, 2), "Medium", "explanation"))
+            out.append(_make(i + 1, [c], medium_prompt(c), _answer(c, 2), "Medium", "explanation"))
     return out
+
+
+def concept_summary(concepts: list[Concept], max_concepts: int = 6) -> str:
+    """Slide-deck summary: the most central concepts' definitions, in document order."""
+    top = sorted(concepts[:max_concepts], key=lambda c: c.page)
+    return " ".join(c.definition for c in top)

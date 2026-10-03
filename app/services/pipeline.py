@@ -145,12 +145,14 @@ def analyze_document(text: str, filename: str = "document.pdf", pages: list[dict
     analysis = analyze_text(text)
     topics = extract_topics(analysis, text, limit=10, chunks=chunks)
     topics = _prefer_defined_concepts(topics, chunks, text)
+    from app.question_generation.concept_generator import concept_summary, mine_concepts
+    concepts = mine_concepts(chunks, text)
     return {
         "filename": filename,
         "word_count": len(text.split()),
         "analysis": analysis,
         "topics": topics,
-        "summary": summarize_text(text),
+        "summary": concept_summary(concepts) if len(concepts) >= 3 else summarize_text(text),
         "pages": pages,
         "chunks": chunks,
     }

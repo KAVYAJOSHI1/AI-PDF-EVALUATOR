@@ -44,3 +44,17 @@ def test_alias_counts_as_concept_in_scoring():
     from app.evaluation.scoring import evaluate_answer
     result = evaluate_answer("BoW counts words.", "Bag of Words counts the frequency of each word.", ["Bag of Words / BoW"])
     assert result.covered_concepts == ["Bag of Words / BoW"]
+
+
+def test_medium_prompt_matches_concept_kind():
+    from app.question_generation.concept_generator import medium_prompt
+    by_term = {c.short: medium_prompt(c) for c in mine_concepts(_chunks())}
+    assert "measures" in by_term["Cross Entropy"]
+    assert "does to text" in by_term["Stemming"]
+
+
+def test_slide_summary_uses_definitions():
+    from app.services.pipeline import analyze_document
+    chunks = _chunks()
+    summary = analyze_document(" ".join(c["text"] for c in chunks), chunks=chunks)["summary"]
+    assert "Stemming removes prefixes" in summary and "print(" not in summary
