@@ -8,6 +8,7 @@ import numpy as np
 from app.nlp.preprocessing import STOP_WORDS, simple_lemma, tokenize
 
 MODEL_NAME = "all-MiniLM-L6-v2"
+RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 
 @lru_cache(maxsize=1)
@@ -18,6 +19,23 @@ def _load_model():
         return SentenceTransformer(MODEL_NAME)
     except Exception:
         return None
+
+
+@lru_cache(maxsize=1)
+def _load_reranker():
+    try:
+        from sentence_transformers import CrossEncoder
+        return CrossEncoder(RERANK_MODEL)
+    except Exception:
+        return None
+
+
+def rerank_scores(query: str, passages: list[str]) -> list[float] | None:
+    """Cross-encoder relevance logits (query and passage read together); None if unavailable."""
+    model = _load_reranker()
+    if model is None or not passages:
+        return None
+    return [float(x) for x in model.predict([(query, p) for p in passages], show_progress_bar=False)]
 
 
 def embeddings_available() -> bool:

@@ -60,13 +60,13 @@ def render_search(doc: dict | None) -> None:
     if not doc:
         st.warning("Analyze a PDF first.")
         return
-    st.write("Ask anything about your document. Results blend **BM25** (exact terms) with **sentence embeddings** (meaning) via Reciprocal Rank Fusion.")
+    st.write("Ask anything about your document. Results blend **BM25** (exact terms) with **sentence embeddings** (meaning) via Reciprocal Rank Fusion, then a **cross-encoder** re-reads the best candidates.")
     query = st.text_input("Your question", placeholder="e.g. How do computers represent the meaning of words?")
     if query:
         for rank, hit in enumerate(search(query, doc.get("chunks", []), top_k=3), 1):
             st.markdown(f"#### {rank}. Page {hit['page']} · {hit['section']}")
             st.success(highlight(hit["answer_sentence"], hit["matched_terms"]))
-            st.caption(f"Fused score {hit['score']:.2f} · BM25 {hit['bm25']:.2f} · semantic {hit['semantic']:.2f} · matched terms: {', '.join(hit['matched_terms']) or 'none (pure semantic match)'}")
+            st.caption(f"Fused score {hit['score']:.2f} · BM25 {hit['bm25']:.2f} · semantic {hit['semantic']:.2f}{' · rerank ' + format(hit['rerank'], '.2f') if hit['rerank'] is not None else ''} · matched terms: {', '.join(hit['matched_terms']) or 'none (pure semantic match)'}")
             with st.expander("Full passage"):
                 st.write(hit["passage"])
 
@@ -237,7 +237,7 @@ def main() -> None:
                     st.session_state.answers.append(None)
                 st.session_state.answers[index] = {**result.to_dict(), "question_prompt": question["prompt"], "source_page": question.get("source_page", 1)}
 
-                st.metric("Evaluation Score", f"{result.overall_score:.1f}%")
+                st.metric("Evaluation Score", f"{result.overall_score:.1f}%", delta=f"-{result.contradiction_penalty:.0f}% contradiction penalty" if result.contradiction_penalty else None)
                 st.write(f"Semantic similarity: {result.semantic_similarity:.1f}% | Concept coverage: {result.concept_coverage:.1f}% | Keyword coverage: {result.keyword_coverage:.1f}%")
 
                 if result.covered_concepts:
@@ -249,13 +249,26 @@ def main() -> None:
                 if result.alignment:
                     st.markdown("**Idea-by-idea check** (each reference idea matched to your closest sentence)")
                     for item in result.alignment:
-                        icon = "✅" if item["addressed"] else "❌"
+                        icon = "⚠️ contradicts" if item.get("contradiction", 0) > 0.6 else ("✅" if item["addressed"] else "❌")
                         st.markdown(f"{icon} *{item['idea']}*  \n&nbsp;&nbsp;&nbsp;↳ {item['matched_sentence'] or 'nothing written'} `{item['similarity']:.2f}`")
     with tabs[6]:
         answers = [item for item in st.session_state.answers if item]
         if answers:
+            from app.services.report import build_markdown_report, revision_plan
             scores = [item["overall_score"] for item in answers]
-            st.metric("Overall Exam Evaluation Score", f"{sum(scores) / len(scores):.1f}%")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Overall Exam Evaluation Score", f"{sum(scores) / len(scores):.1f}%")
+            m2.metric("Best answer", f"{max(scores):.1f}%")
+            m3.metric("Contradictions flagged", sum(len(a.get("contradictions", [])) for a in answers))
+            st.bar_chart({f"Q{i + 1}": a["overall_score"] for i, a in enumerate(answers)})
+            st.subheader("Score components per question")
+            st.dataframe([{"Question": f"Q{i + 1}", "Semantic": a["semantic_similarity"], "Concepts": a["concept_coverage"], "Keywords": a["keyword_coverage"], "Penalty %": a.get("contradiction_penalty", 0), "Overall": a["overall_score"]} for i, a in enumerate(answers)], use_container_width=True)
+            plan = revision_plan(answers, (st.session_state.document or {}).get("chunks", []))
+            if plan:
+                st.subheader("📚 Revise these (retrieved from your PDF)")
+                for item in plan:
+                    st.markdown(f"- **{item['concept']}** · page {item['page']} · {item['section']}  \n  > {item['sentence']}")
+            st.download_button("⬇ Download study report (Markdown)", build_markdown_report((st.session_state.document or {}).get("filename", "document"), answers, plan), file_name="study_report.md")
             st.subheader("Detailed Question Feedback")
             for i, ans in enumerate(answers):
                 with st.expander(f"Question {i+1} (Page {ans.get('source_page', 1)}): Score {ans['overall_score']:.1f}%"):
@@ -267,7 +280,6 @@ def main() -> None:
                         st.write("✗ Missing:", ", ".join(ans["missing_concepts"]))
         else:
             st.info("Complete at least one question evaluation in the Exam tab to see results.")
-
 
 
 if __name__ == "__main__":

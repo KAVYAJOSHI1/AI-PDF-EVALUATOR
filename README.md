@@ -95,6 +95,11 @@ models/               Local model cache or lightweight artifacts
 - **Exam feedback** shows an idea-by-idea check: which reference ideas your answer expressed, and which sentence expressed them.
 - The embedding model is loaded once and cached instead of on every call.
 
+- **Contradiction detection**: a local NLI model (`app/nlp/nli.py`) catches answers that reuse the right words but say the wrong thing (e.g. "TF-IDF *ignores* term frequency"); these are penalised and explained.
+- **Retrieve + rerank**: search runs at sentence level with BM25 + embeddings (RRF), then a cross-encoder re-ranks the best candidates.
+- **Results tab**: score chart, per-component table, a "Revise these" plan that retrieves the PDF passage for every missed concept, and a downloadable Markdown study report (`app/services/report.py`).
+- **Bug fix**: PDF upload previously crashed (`ExtractedDocument` was never defined); it is fixed and covered by `tests/test_pdf_upload.py`.
+
 ## Scoring Methodology
 
 The result is an `Evaluation Score`, not objective truth. The default formula is:
@@ -103,6 +108,7 @@ The result is an `Evaluation Score`, not objective truth. The default formula is
 overall = 0.50 * semantic_similarity
         + 0.30 * concept_coverage
         + 0.20 * keyword_coverage
+overall *= 1 - 0.6 * (contradicted ideas / reference ideas)   # NLI penalty
 ```
 
 Each component is normalized to 0–100. Semantic similarity uses a local sentence-transformer when installed and falls back to lexical Jaccard similarity. Concept coverage checks whether the answer mentions each reference concept, while keyword coverage checks normalized reference terms. The weights are centralized in `app/evaluation/scoring.py` so they can be adjusted for experiments.

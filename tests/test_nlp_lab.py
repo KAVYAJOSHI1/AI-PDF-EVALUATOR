@@ -53,3 +53,27 @@ def test_alignment_flags_missing_idea():
     reference = "Lemmatization uses a dictionary to return valid base forms. Stemming simply chops suffixes off words."
     out = align_ideas("Lemmatization uses a dictionary to find the valid base form.", reference)
     assert out[0]["addressed"] and not out[1]["addressed"]
+
+
+def test_contradiction_is_penalised():
+    from app.evaluation.scoring import evaluate_answer
+    ref = "TF-IDF weighs a term by how often it appears in a document and how rare it is across the corpus."
+    good = evaluate_answer("TF-IDF scores terms by their frequency in a document and their rarity in the corpus.", ref, ["TF-IDF"])
+    bad = evaluate_answer("TF-IDF ignores how often a term appears and only counts how rare it is.", ref, ["TF-IDF"])
+    assert not good.contradictions and good.overall_score > 70
+    assert bad.contradictions and bad.overall_score < good.overall_score - 20
+    assert "contradicts" in bad.feedback
+
+
+def test_search_reranker_picks_right_sentence():
+    chunks = [{"text": TEXT, "page_number": 1}]
+    assert "embeddings" in search("how do machines represent the meaning of words", chunks, 1)[0]["answer_sentence"]
+
+
+def test_revision_plan_and_report():
+    from app.services.report import build_markdown_report, revision_plan
+    chunks = [{"text": TEXT, "page_number": 3, "section": "Basics"}]
+    answers = [{"overall_score": 40.0, "feedback": "x", "missing_concepts": ["word embeddings"], "covered_concepts": [], "question_prompt": "Q?", "source_page": 3, "contradictions": []}]
+    plan = revision_plan(answers, chunks)
+    assert plan and plan[0]["page"] == 3 and "embeddings" in plan[0]["sentence"]
+    assert "Revise these" in build_markdown_report("a.pdf", answers, plan)

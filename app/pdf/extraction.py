@@ -40,6 +40,17 @@ class PassageChunk:
         }
 
 
+@dataclass
+class ExtractedDocument:
+    filename: str
+    page_count: int
+    text: str
+    word_count: int
+    warnings: list[str]
+    pages: list[dict]
+    chunks: list[dict]
+
+
 def _is_section_header(line: str) -> str | None:
     """Detect section header lines like '1. Text Vectorization' or 'Overview'."""
     line_clean = line.strip()
